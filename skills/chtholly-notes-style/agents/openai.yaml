@@ -1,0 +1,4 @@
+interface:
+  display_name: "C++ 工作笔记"
+  short_description: "按大学博客风格记录 C++ 开发中的优化、算法和排错过程"
+  default_prompt: "Use $chtholly-notes-style to rewrite this C++ work log as a personal-style Chinese blog post."
