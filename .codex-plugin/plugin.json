@@ -1,0 +1,31 @@
+{
+  "name": "chtholly-notes-style",
+  "version": "1.0.1",
+  "description": "把 C++ 开发中的优化、算法与调试记录改写成个人中文博客风格的 Codex 插件。",
+  "author": {
+    "name": "ChthollyFan",
+    "url": "https://github.com/ChthollyFan"
+  },
+  "homepage": "https://github.com/ChthollyFan/chtholly-notes-style",
+  "repository": "https://github.com/ChthollyFan/chtholly-notes-style",
+  "keywords": [
+    "codex",
+    "skill",
+    "writing",
+    "blog",
+    "cpp",
+    "chtholly-notes-style"
+  ],
+  "skills": "./skills/",
+  "interface": {
+    "displayName": "Chtholly Notes Style",
+    "shortDescription": "把 C++ 开发笔记改写成个人中文博客",
+    "longDescription": "按 ChthollyFan 大学时期的博客风格，把 C++ 开发中的优化、算法、调试与性能排查记录整理成中文博客文章；保留问题推进过程与个人判断，并遵循固定的文风档案与文章骨架。",
+    "developerName": "ChthollyFan",
+    "category": "Productivity",
+    "capabilities": [
+      "Read"
+    ],
+    "websiteURL": "https://github.com/ChthollyFan/chtholly-notes-style"
+  }
+}
