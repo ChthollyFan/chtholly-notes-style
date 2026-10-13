@@ -15,6 +15,12 @@
  *   node scripts/install-dsh-skill.mjs --copy                 # 复制副本而不是链接
  *   node scripts/install-dsh-skill.mjs --force                # 已有同名条目时先重命名备份
  *   node scripts/install-dsh-skill.mjs --target-dir <目录>    # 指定 skill 根目录
+ *   node scripts/install-dsh-skill.mjs uninstall              # 卸载，只删指向本仓库的链接
+ *
+ * 作为 npm 包时 package.json 的 bin 指向本文件，所以下面这些写法等价：
+ *   npx --yes github:ChthollyFan/chtholly-notes-style
+ *   npm i -g chtholly-notes-style && chtholly-notes-style
+ * npx 把包体放在临时缓存里，缓存回收后链接会悬挂，因此这种场景自动改成复制。
  */
 
 import {
@@ -25,7 +31,10 @@ import {
   readFileSync,
   readlinkSync,
   renameSync,
+  rmdirSync,
+  statSync,
   symlinkSync,
+  unlinkSync,
 } from 'node:fs'
 import { homedir } from 'node:os'
 import { dirname, join, relative, resolve } from 'node:path'
@@ -54,11 +63,15 @@ const SOURCE_DIR = join(REPO_ROOT, 'skills', SKILL_NAME)
  * @throw Error 出现未知参数时抛出
  */
 function parseArgs(argv) {
-  const options = { copy: false, force: false, help: false, targetRoot: undefined }
+  const options = { command: 'install', force: false, help: false, mode: 'auto', targetRoot: undefined }
   for (let index = 0; index < argv.length; index += 1) {
     const arg = argv[index]
-    if (arg === '--copy') {
-      options.copy = true
+    if (arg === 'install' || arg === 'uninstall') {
+      options.command = arg
+    } else if (arg === '--copy') {
+      options.mode = 'copy'
+    } else if (arg === '--link') {
+      options.mode = 'link'
     } else if (arg === '--force') {
       options.force = true
     } else if (arg === '--help' || arg === '-h') {
@@ -76,10 +89,13 @@ function parseArgs(argv) {
 
 /** 打印用法说明 */
 function printUsage() {
-  console.log(`用法：node scripts/install-dsh-skill.mjs [--copy] [--force] [--target-dir <目录>]
+  console.log(`用法：node scripts/install-dsh-skill.mjs [install|uninstall] [--copy|--link] [--force] [--target-dir <目录>]
 
+  install              安装 skill，默认动作
+  uninstall            卸载：只删除指向本仓库的链接
   --copy               复制一份独立副本，而不是建立目录链接
-  --force              目标已存在且不是本仓库的链接时，先重命名备份再安装
+  --link               强制建立目录链接；在 npm 临时目录里运行时默认改成复制
+  --force              目标已存在且不是本仓库的链接时，先重命名备份再安装/卸载
   --target-dir <目录>  指定 skill 根目录，默认 $DSH_HOME/skills 或 ~/.dsh/skills`)
 }
 
@@ -156,18 +172,23 @@ function describeTarget(target) {
 }
 
 /**
- * @brief 判断两个路径是否指向同一位置
+ * @brief 判断两个路径是否指向同一个目录
  * @param left 第一个路径
  * @param right 第二个路径
- * @return 指向同一位置返回 true
- * @note Windows 路径大小写不敏感，这里统一转小写后再比较
+ * @return 指向同一目录返回 true
+ * @note 用文件标识而不是路径文本比较：Windows 的 junction 既不被
+ *       isSymbolicLink() 识别、也读不了 readlink，只能靠 statSync 跟随
+ *       之后的 ino/dev 判断。inode 不可用（返回 0）时一律判为不同，
+ *       宁可多问一次 --force，也不误删用户的真实目录
  */
-function isSamePath(left, right) {
-  const normalize = (value) => {
-    const resolved = resolve(value).replace(/\\/g, '/')
-    return process.platform === 'win32' ? resolved.toLowerCase() : resolved
+function isSameDirectory(left, right) {
+  try {
+    const a = statSync(left, { bigint: true })
+    const b = statSync(right, { bigint: true })
+    return a.ino !== 0n && a.ino === b.ino && a.dev === b.dev
+  } catch {
+    return false
   }
-  return normalize(left) === normalize(right)
 }
 
 /**
@@ -179,6 +200,78 @@ function isSamePath(left, right) {
 function createLink(target, source) {
   const linkType = process.platform === 'win32' ? 'junction' : 'dir'
   symlinkSync(source, target, linkType)
+}
+
+/**
+ * @brief 删除目录链接本身，不触碰链向的内容
+ * @param target 链接路径
+ * @note Windows 的 junction 只能用 rmdir 删（unlink 返回 EPERM），
+ *       其他平台的目录符号链接相反，所以两个都试一遍
+ */
+function removeLink(target) {
+  const attempts = process.platform === 'win32' ? [rmdirSync, unlinkSync] : [unlinkSync, rmdirSync]
+  let lastError
+  for (const attempt of attempts) {
+    try {
+      attempt(target)
+      return
+    } catch (error) {
+      lastError = error
+    }
+  }
+  throw lastError
+}
+
+/**
+ * @brief 生成备份路径，保留原名并追加时间戳
+ * @param target 待备份的路径
+ * @return 备份路径
+ */
+function backupPath(target) {
+  return `${target}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`
+}
+
+/**
+ * @brief 判断本脚本是否运行在 npm 的临时安装目录里
+ * @return 运行于 npx 缓存等临时位置时返回 true
+ * @note npx 把包体放在 cache/_npx/<hash>/node_modules 下，缓存随时会被回收，
+ *       此时建链接会留下指向空目录的悬挂链接，所以自动降级为复制
+ */
+function isEphemeralInstall() {
+  return /[\\/]_npx[\\/]/.test(REPO_ROOT) || /[\\/]_cacache[\\/]/.test(REPO_ROOT)
+}
+
+/**
+ * @brief 卸载已安装的 skill
+ * @param target 已安装路径
+ * @param force 目标不是本仓库链接时，是否重命名备份而不是直接报错
+ * @return 卸载成功返回 true
+ * @note 只删除指向本仓库源码目录的链接，链接指向别处或真实目录一律不动
+ */
+function uninstall(target, force) {
+  const existing = describeTarget(target)
+  if (existing === undefined) {
+    console.log(`[跳过] ${target} 不存在，无需卸载`)
+    return true
+  }
+
+  if (isSameDirectory(target, SOURCE_DIR)) {
+    // 删除链接本身，不触碰链向的内容
+    removeLink(target)
+    console.log(`[删除] ${target}`)
+    return true
+  }
+
+  if (!force) {
+    console.error(`[错误] ${target} 不是指向本仓库的链接（类型：${existing.kind}），未做任何修改`)
+    console.error('       确认要移除副本后加 --force；脚本只会重命名备份，不会删除内容')
+    return false
+  }
+
+  const backup = backupPath(target)
+  renameSync(target, backup)
+  console.log(`[备份] 原内容已重命名为 ${backup}`)
+  return true
 }
 
 /** 主流程：校验源、处理已有目标、安装并打印结果 */
@@ -201,11 +294,17 @@ function main() {
 
   const skillRoot = resolveSkillRoot(options.targetRoot)
   const target = join(skillRoot, SKILL_NAME)
+
+  if (options.command === 'uninstall') {
+    if (!uninstall(target, options.force)) process.exitCode = 1
+    return
+  }
+
   const existing = describeTarget(target)
 
   if (existing !== undefined) {
     // 已经指向本仓库时直接视为已安装，避免重复操作
-    if (existing.kind === 'link' && isSamePath(existing.dest, SOURCE_DIR)) {
+    if (isSameDirectory(target, SOURCE_DIR)) {
       console.log(`[跳过] ${target} 已指向本仓库，无需重新安装`)
       return
     }
@@ -216,15 +315,17 @@ function main() {
       return
     }
     // 按文件安全约定先重命名备份，不直接删除用户目录
-    const backup = `${target}.bak-${new Date().toISOString().replace(/[:.]/g, '-')}`
+    const backup = backupPath(target)
     renameSync(target, backup)
     console.log(`[备份] 原内容已重命名为 ${backup}`)
   }
 
   mkdirSync(skillRoot, { recursive: true })
-  if (options.copy) {
+  const useCopy = options.mode === 'copy' || (options.mode === 'auto' && isEphemeralInstall())
+  if (useCopy) {
     cpSync(SOURCE_DIR, target, { recursive: true })
-    console.log(`[复制] ${relative(REPO_ROOT, SOURCE_DIR)} -> ${target}`)
+    const reason = options.mode === 'auto' ? '（npm 临时目录里的包体随时会被回收，改用复制）' : ''
+    console.log(`[复制] ${relative(REPO_ROOT, SOURCE_DIR)} -> ${target}${reason}`)
   } else {
     createLink(target, SOURCE_DIR)
     console.log(`[链接] ${target} -> ${SOURCE_DIR}`)

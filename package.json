@@ -1,0 +1,39 @@
+{
+  "name": "@chtholly-fan/chtholly-notes-style",
+  "version": "1.0.0",
+  "description": "把 C++ 开发中的优化、算法与调试记录改写成个人中文博客风格的 Agent Skill（Codex / dsh 双端可用）",
+  "keywords": [
+    "agent-skill",
+    "codex",
+    "dsh",
+    "writing",
+    "blog",
+    "cpp"
+  ],
+  "type": "module",
+  "main": "index.js",
+  "bin": {
+    "chtholly-notes-style": "scripts/install-dsh-skill.mjs"
+  },
+  "files": [
+    "scripts",
+    "skills",
+    "index.js",
+    "cordis.patch.yml"
+  ],
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    }
+  },
+  "engines": {
+    "node": ">=18"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ChthollyFan/chtholly-notes-style.git"
+  },
+  "scripts": {
+    "install-skill": "node scripts/install-dsh-skill.mjs"
+  }
+}

@@ -6,6 +6,61 @@
 
 ## 安装
 
+四种方式装的是同一份 `skills/chtholly-notes-style`，按场景挑一个。
+
+### 用 npx 安装（推荐）
+
+不需要克隆仓库，也不需要 npm 账号——包直接从 GitHub 解析：
+
+```bash
+npx --yes github:ChthollyFan/chtholly-notes-style
+```
+
+默认装到 dsh 的用户级 skill 根目录（`$DSH_HOME/skills`，未设置时为 `~/.dsh/skills`）。常用参数：
+
+```bash
+npx --yes github:ChthollyFan/chtholly-notes-style --copy                  # 复制副本，而不是建链接
+npx --yes github:ChthollyFan/chtholly-notes-style --target-dir <skill 根> # 换目标目录
+npx --yes github:ChthollyFan/chtholly-notes-style --force                 # 已装过副本时覆盖，旧的改名备份
+npx --yes github:ChthollyFan/chtholly-notes-style uninstall               # 卸载
+```
+
+npx 会把包体放在 npm 的临时缓存里（`_npx/<hash>/node_modules`），缓存回收后链接就会悬挂，所以这种场景脚本自动改用复制。想要 `git pull` 之后立即生效的链接模式，用下面的仓库内安装。
+
+包发布到 npm registry 之后（见「发布为 npm 包」）可以简写成：
+
+```bash
+npx --yes @chtholly-fan/chtholly-notes-style
+npm i -g @chtholly-fan/chtholly-notes-style && chtholly-notes-style
+```
+
+npm 装的是快照：更新要重跑命令并加 `--force`（旧副本改名成 `<名字>.bak-<时间戳>`，不会删除），链接模式则由 `git pull` 直接生效。
+
+### 用 dsh 插件安装（dsh bundle 通道）
+
+包在 `package.json` 里声明了 `dsh.bundle`，因此可以直接走 dsh 自己的插件安装命令（包名带 `@chtholly-fan/` scope，技能名本身仍是 `chtholly-notes-style`）：
+
+```bash
+dsh plugin --profile web add @chtholly-fan/chtholly-notes-style
+```
+
+dsh 会把包装进该 profile 的 `node_modules`，并登记到 `dsh.profile.bundles`；profile 下次启动时，包内的 `index.js` 会把 `skills/chtholly-notes-style` 植入 `$DSH_HOME/skills`（所有 profile 共享的用户级 skill 根），所以 **web 与 desktop 装一次即可共用**。
+
+- 来源不限于 registry，GitHub 与本地 tarball 同样可以：
+  `dsh plugin --profile web add ./chtholly-fan-chtholly-notes-style-1.0.0.tgz`
+- desktop profile 由桌面应用独占管理：`dsh plugin --profile desktop add ...` 只在桌面版自带的 dsh 下放行，且应用运行时会撞上 profile 的文件锁，建议先完全退出应用，或改用应用内的插件市场安装。
+- 生效时机：web 端要等下一次启动 profile；desktop 端的 `patchReload: live` 是否热加载尚未实测。
+- 如果 `$DSH_HOME/skills/chtholly-notes-style` 已经存在、又不带本插件的版本戳（例如下面「仓库内安装」建立的目录链接），插件会跳过并在日志里说明，不会覆盖你现有的目录。
+
+卸载分两步：dsh 侧移除依赖与 bundles 条目，植入的副本由脚本清理（只改名备份，不删除内容）：
+
+```bash
+dsh plugin --profile web remove @chtholly-fan/chtholly-notes-style
+npx --yes @chtholly-fan/chtholly-notes-style uninstall --force
+```
+
+### Codex 官方脚本
+
 使用 Codex 自带的 skill 安装脚本：
 
 ```bash
@@ -54,6 +109,12 @@ node scripts/install-dsh-skill.mjs
 node scripts/install-dsh-skill.mjs --copy
 ```
 
+卸载（只删除指向本仓库的链接，链向的内容不动）：
+
+```powershell
+node scripts/install-dsh-skill.mjs uninstall
+```
+
 手动安装等价于：
 
 ```bash
@@ -81,9 +142,25 @@ mklink /J "%USERPROFILE%\.dsh\skills\chtholly-notes-style" "<仓库路径>\skill
 - dsh 的目录消息只渲染 `name` 和 `description`（描述截断到 500 字符），`references/` 通过资源目录提示可达，正文里保持相对路径引用即可。
 - `agents/openai.yaml` 是 Codex 的界面元数据，dsh 不读取也不会因此报错，两份可以共存。
 
+## 发布为 npm 包
+
+`package.json` 已经带好 `bin`（指向 `scripts/install-dsh-skill.mjs`）、`dsh.bundle`（指向 `cordis.patch.yml`）和 `files` 白名单（打包 `scripts/`、`skills/`、`index.js` 与 `cordis.patch.yml`）。`docs/` 是本地写作草稿，既被 `.gitignore` 忽略，也不在 `files` 里，不会进包。
+
+`private` 字段已移除（发布前提），直接发布即可：
+
+```bash
+npm pack --dry-run        # 确认真实进包的文件
+npm publish --access public
+```
+
+发布后的调用方式见上面的「用 npx 安装」。包体是快照：改动 `SKILL.md` 或 `references/` 之后要重新发布并升版本号，用户才能拿到新内容。
+
 ## 目录结构
 
 ```text
+package.json                      # npm 包元数据：bin 指向安装脚本，dsh.bundle 指向 patch
+cordis.patch.yml                  # dsh bundle 的 patch 层，插入本包的 host 插件行
+index.js                          # 该插件：把随包技能植入 $DSH_HOME/skills
 skills/
 └── chtholly-notes-style/
     ├── SKILL.md
@@ -96,7 +173,7 @@ scripts/
 └── install-dsh-skill.mjs
 ```
 
-`SKILL.md` 提供主要工作流，`references/` 中的文件只在需要判断文章骨架或具体写作风格时读取。`scripts/install-dsh-skill.mjs` 负责 dsh 侧的安装与 frontmatter 自检。
+`SKILL.md` 提供主要工作流，`references/` 中的文件只在需要判断文章骨架或具体写作风格时读取。`scripts/install-dsh-skill.mjs` 负责 dsh 侧的安装、卸载与 frontmatter 自检，同时是 npm 包的 `bin` 入口。
 
 ## 使用范围
 
