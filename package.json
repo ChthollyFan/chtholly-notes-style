@@ -12,11 +12,7 @@
   ],
   "type": "module",
   "main": "index.js",
-  "bin": {
-    "chtholly-notes-style": "scripts/install-dsh-skill.mjs"
-  },
   "files": [
-    "scripts",
     "skills",
     "index.js",
     "cordis.patch.yml"
@@ -32,8 +28,5 @@
   "repository": {
     "type": "git",
     "url": "git+https://github.com/ChthollyFan/chtholly-notes-style.git"
-  },
-  "scripts": {
-    "install-skill": "node scripts/install-dsh-skill.mjs"
   }
 }
